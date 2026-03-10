@@ -1,5 +1,6 @@
 #include <Windows.h>
 #include <windowsx.h>
+#include <shlobj.h>
 #include <string>
 #include <vector>
 
@@ -29,6 +30,7 @@ typedef struct TRCONTEXT {
 } TRCONTEXT;
 
 HANDLE saveFile;
+char saveFilePath[MAX_PATH];
 
 // Saves our hidden windows so they can be restored in case
 // of crashing.
@@ -207,9 +209,21 @@ void exitApp() {
   PostQuitMessage(0);
 }
 
+// Initializes the save file path in %LOCALAPPDATA%\Traymond
+bool initSaveFilePath() {
+  char appDataPath[MAX_PATH];
+  if (FAILED(SHGetFolderPath(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, appDataPath))) {
+    return false;
+  }
+  _snprintf_s(saveFilePath, MAX_PATH, "%s\\Traymond", appDataPath);
+  CreateDirectory(saveFilePath, NULL);
+  strcat_s(saveFilePath, "\\traymond.dat");
+  return true;
+}
+
 // Creates and reads the save file to restore hidden windows in case of unexpected termination
 void startup(TRCONTEXT *context) {
-  if ((saveFile = CreateFile("traymond.dat", GENERIC_READ | GENERIC_WRITE, \
+  if ((saveFile = CreateFile(saveFilePath, GENERIC_READ | GENERIC_WRITE, \
     0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL)) == INVALID_HANDLE_VALUE) {
     MessageBox(NULL, "Error! Traymond could not create a save file.", "Traymond", MB_OK | MB_ICONERROR);
     exitApp();
@@ -305,6 +319,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
   TRCONTEXT context = {};
 
+  if (!initSaveFilePath()) {
+    MessageBox(NULL, "Error! Could not initialize save file path.", "Traymond", MB_OK | MB_ICONERROR);
+    return 1;
+  }
+
   NOTIFYICONDATA icon = {};
 
   // Mutex to allow only one instance
@@ -362,7 +381,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
   CloseHandle(saveFile);
   DestroyMenu(context.trayMenu);
   DestroyWindow(context.mainWindow);
-  DeleteFile("traymond.dat"); // No save file means we have exited gracefully
+  DeleteFile(saveFilePath); // No save file means we have exited gracefully
   UnregisterHotKey(context.mainWindow, 0);
   return msg.wParam;
 }
