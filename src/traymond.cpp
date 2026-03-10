@@ -114,18 +114,28 @@ void minimizeToTray(TRCONTEXT *context, long restoreWindow) {
     MessageBox(NULL, "Error! Too many hidden windows. Please unhide some.", "Traymond", MB_OK | MB_ICONERROR);
     return;
   }
-  ULONG_PTR icon = GetClassLongPtr(currWin, GCLP_HICONSM);
+  // Retrieve the window's small icon
+  HICON icon = reinterpret_cast<HICON>(SendMessage(currWin, WM_GETICON, ICON_SMALL2, 0));
   if (!icon) {
-    icon = SendMessage(currWin, WM_GETICON, 2, NULL);
+    icon = reinterpret_cast<HICON>(SendMessage(currWin, WM_GETICON, ICON_SMALL, 0));
     if (!icon) {
-      return;
+      icon = reinterpret_cast<HICON>(SendMessage(currWin, WM_GETICON, ICON_BIG, 0));
+      if (!icon) {
+        icon = reinterpret_cast<HICON>(GetClassLongPtr(currWin, GCLP_HICONSM));
+        if (!icon) {
+          icon = reinterpret_cast<HICON>(GetClassLongPtr(currWin, GCLP_HICON));
+          if (!icon) {
+            return;
+          }
+        }
+      }
     }
   }
 
   NOTIFYICONDATA nid;
   nid.cbSize = sizeof(NOTIFYICONDATA);
   nid.hWnd = context->mainWindow;
-  nid.hIcon = (HICON)icon;
+  nid.hIcon = icon;
   nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
   nid.uVersion = NOTIFYICON_VERSION_4;
   nid.uID = LOWORD(reinterpret_cast<UINT>(currWin));
