@@ -24,6 +24,7 @@ typedef struct HIDDEN_WINDOW {
 // Current execution context
 typedef struct TRCONTEXT {
   HWND mainWindow;
+  NOTIFYICONDATA trayIcon;
   HIDDEN_WINDOW icons[MAXIMUM_WINDOWS];
   HMENU trayMenu;
   int iconIndex; // How many windows are currently hidden
@@ -31,6 +32,7 @@ typedef struct TRCONTEXT {
 
 HANDLE saveFile;
 char saveFilePath[MAX_PATH];
+UINT taskbarCreatedMessage;
 
 // Saves our hidden windows so they can be restored in case
 // of crashing.
@@ -134,7 +136,7 @@ void minimizeToTray(TRCONTEXT *context, long restoreWindow) {
     }
   }
 
-  NOTIFYICONDATA nid;
+  NOTIFYICONDATA nid = {};
   nid.cbSize = sizeof(NOTIFYICONDATA);
   nid.hWnd = context->mainWindow;
   nid.hIcon = icon;
@@ -155,6 +157,11 @@ void minimizeToTray(TRCONTEXT *context, long restoreWindow) {
 
 }
 
+void addTrayIcon(NOTIFYICONDATA* icon) {
+  Shell_NotifyIcon(NIM_ADD, icon);
+  Shell_NotifyIcon(NIM_SETVERSION, icon);
+}
+
 // Adds our own icon to tray
 void createTrayIcon(HWND mainWindow, HINSTANCE hInstance, NOTIFYICONDATA* icon) {
   icon->cbSize = sizeof(NOTIFYICONDATA);
@@ -165,8 +172,15 @@ void createTrayIcon(HWND mainWindow, HINSTANCE hInstance, NOTIFYICONDATA* icon) 
   icon->uID = reinterpret_cast<UINT>(mainWindow);
   icon->uCallbackMessage = WM_OURICON;
   strcpy_s(icon->szTip, "Traymond");
-  Shell_NotifyIcon(NIM_ADD, icon);
-  Shell_NotifyIcon(NIM_SETVERSION, icon);
+  addTrayIcon(icon);
+}
+
+void recreateTrayIcons(TRCONTEXT* context) {
+  addTrayIcon(&context->trayIcon);
+  for (int i = 0; i < context->iconIndex; i++)
+  {
+    addTrayIcon(&context->icons[i].icon);
+  }
 }
 
 // Creates our tray icon menu
@@ -275,6 +289,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
   TRCONTEXT* context = reinterpret_cast<TRCONTEXT*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
   POINT pt;
+  if (uMsg == taskbarCreatedMessage) {
+    recreateTrayIcons(context);
+    return 0;
+  }
   switch (uMsg)
   {
   case WM_ICON:
@@ -324,8 +342,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     return 1;
   }
 
-  NOTIFYICONDATA icon = {};
-
   // Mutex to allow only one instance
   const char szUniqueNamedMutex[] = "traymond_mutex";
   HANDLE mutex = CreateMutex(NULL, TRUE, szUniqueNamedMutex);
@@ -349,7 +365,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     return 1;
   }
 
-  context.mainWindow = CreateWindow(CLASS_NAME, NULL, NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL);
+  taskbarCreatedMessage = RegisterWindowMessage("TaskbarCreated");
+  context.mainWindow = CreateWindow(CLASS_NAME, NULL, 0, 0, 0, 0, 0, NULL, NULL, hInstance, NULL);
 
   if (!context.mainWindow) {
     return 1;
@@ -363,7 +380,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     return 1;
   }
 
-  createTrayIcon(context.mainWindow, hInstance, &icon);
+  createTrayIcon(context.mainWindow, hInstance, &context.trayIcon);
   createTrayMenu(&context.trayMenu);
   startup(&context);
 
@@ -375,7 +392,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
   }
   // Clean up on exit;
   showAllWindows(&context);
-  Shell_NotifyIcon(NIM_DELETE, &icon);
+  Shell_NotifyIcon(NIM_DELETE, &context.trayIcon);
   ReleaseMutex(mutex);
   CloseHandle(mutex);
   CloseHandle(saveFile);
